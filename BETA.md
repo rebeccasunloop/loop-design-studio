@@ -13,8 +13,18 @@ deployed infrastructure. (Real deployment is Phase 2 — see README.)
 2. **Cloudflare Tunnel + Access** (`cloudflared` is installed at
    `~/.local/bin/cloudflared`):
 
+   > ⚠️ **Prerequisite discovered 2026-07-02:** Cloudflare Access needs a
+   > domain (zone) on the Cloudflare account, and **bankonloop.com is on AWS
+   > Route 53** — so `cloudflared tunnel login` fails on an account with no
+   > zone. Options: (a) add a personally-owned domain to a free Cloudflare
+   > account and run the beta at `studio.<that-domain>` (the Access policy
+   > still restricts sign-in to @bankonloop.com Google accounts); (b) paid
+   > ngrok: `ngrok http 3000 --oauth google --oauth-allow-domain
+   > bankonloop.com` — SSO with no domain/DNS work; (c) ask IT whether Loop
+   > has a Cloudflare account or can delegate a subdomain.
+
    ```bash
-   cloudflared tunnel login                 # opens browser; pick the zone (e.g. bankonloop.com)
+   cloudflared tunnel login                 # opens browser; pick the zone
    cloudflared tunnel create design-studio
    cloudflared tunnel route dns design-studio studio.<your-zone>
    ```
