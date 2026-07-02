@@ -33,15 +33,10 @@ const NAMED_TOKENS: Record<string, string> = {
   "171717": "neutral-900",
   "0A0A0A": "neutral-950",
   "000000": "black",
-  // Accents (decorative / alternate button moments only)
+  // Accent greens (decorative; F2FCE4 doubles as semantic-success-bg /
+  // secondary-button fill, so both remain valid in UI)
   D2F3A7: "accent-bright-green",
   F2FCE4: "accent-light-green",
-  "8F5CCF": "accent-purple",
-  EED9F7: "accent-lilac",
-  F7ECFB: "accent-light-lilac",
-  "6B3F88": "accent-dark-lilac",
-  CFE5F3: "accent-blue",
-  E8F3FA: "accent-light-blue",
   // Semantic
   F12D1B: "semantic-error",
   FEF1ED: "semantic-error-bg",
@@ -52,16 +47,39 @@ const NAMED_TOKENS: Record<string, string> = {
   "1570EF": "semantic-info",
 };
 
-let cachedPalette: Set<string> | null = null;
+// Legacy accents — per Rebecca (2026-07-03): usable in graphic design
+// (decks, social) but never in components or actual UI.
+const LEGACY_ACCENTS: Record<string, string> = {
+  "8F5CCF": "accent-purple",
+  EED9F7: "accent-lilac",
+  F7ECFB: "accent-light-lilac",
+  "6B3F88": "accent-dark-lilac",
+  CFE5F3: "accent-blue",
+  E8F3FA: "accent-light-blue",
+};
+
+/** "ui" = prototypes/components; "graphic" = decks, social collateral. */
+export type PaletteContext = "ui" | "graphic";
+
+function tokensFor(context: PaletteContext): Record<string, string> {
+  return context === "graphic" ? { ...NAMED_TOKENS, ...LEGACY_ACCENTS } : NAMED_TOKENS;
+}
+
+export function isLegacyAccent(hex: string): string | null {
+  return LEGACY_ACCENTS[hex.toUpperCase()] ?? null;
+}
+
+const cachedPalettes = new Map<PaletteContext, Set<string>>();
 
 /**
- * Allowed hex values: the named palette above, unioned with every hex string
- * literal in the deck skill's brand.js so new tokens added there are picked
- * up without touching this file.
+ * Allowed hex values for the given context: the named palette above, unioned
+ * with every hex string literal in the deck skill's brand.js so new tokens
+ * added there are picked up without touching this file.
  */
-export function loadBrandPalette(): Set<string> {
-  if (cachedPalette) return cachedPalette;
-  const palette = new Set(Object.keys(NAMED_TOKENS));
+export function loadBrandPalette(context: PaletteContext): Set<string> {
+  const cached = cachedPalettes.get(context);
+  if (cached) return cached;
+  const palette = new Set(Object.keys(tokensFor(context)));
   const brandJs = path.join(process.cwd(), "skills", "loop-brand-deck", "build", "brand.js");
   if (fs.existsSync(brandJs)) {
     const source = fs.readFileSync(brandJs, "utf-8");
@@ -69,16 +87,20 @@ export function loadBrandPalette(): Set<string> {
       palette.add(match[1].toUpperCase());
     }
   }
-  cachedPalette = palette;
+  cachedPalettes.set(context, palette);
   return palette;
 }
 
-export function nearestToken(hex: string): { name: string; hex: string; distance: number } | null {
+export function nearestToken(
+  hex: string,
+  context: PaletteContext
+): { name: string; hex: string; distance: number } | null {
+  const NAMED = tokensFor(context);
   const r = parseInt(hex.slice(0, 2), 16);
   const g = parseInt(hex.slice(2, 4), 16);
   const b = parseInt(hex.slice(4, 6), 16);
   let best: { name: string; hex: string; distance: number } | null = null;
-  for (const [tokenHex, name] of Object.entries(NAMED_TOKENS)) {
+  for (const [tokenHex, name] of Object.entries(NAMED)) {
     const tr = parseInt(tokenHex.slice(0, 2), 16);
     const tg = parseInt(tokenHex.slice(2, 4), 16);
     const tb = parseInt(tokenHex.slice(4, 6), 16);
@@ -91,13 +113,16 @@ export function nearestToken(hex: string): { name: string; hex: string; distance
 }
 
 /** Human-readable palette summary for agent prompts. */
-export function paletteSummary(): string {
+export function paletteSummary(context: PaletteContext): string {
   const groups: Record<string, string[]> = {};
-  for (const [hex, name] of Object.entries(NAMED_TOKENS)) {
+  for (const [hex, name] of Object.entries(tokensFor(context))) {
     const group = name.split("-")[0];
     (groups[group] ??= []).push(`${name} #${hex}`);
   }
-  return Object.values(groups)
+  const summary = Object.values(groups)
     .map((entries) => entries.join(", "))
     .join("; ");
+  return context === "ui"
+    ? `${summary}. Legacy accent colors (purple, lilac, blue) are for graphic design only — never use them in UI.`
+    : summary;
 }

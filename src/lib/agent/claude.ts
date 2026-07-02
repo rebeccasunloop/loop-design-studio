@@ -18,7 +18,7 @@ import {
 } from "../db";
 import { getSkill } from "../skills";
 import { recordGap } from "../pipeline";
-import { paletteSummary } from "./brand-palette";
+import { paletteSummary, type PaletteContext } from "./brand-palette";
 import { runScreenshot, runTokenCheck } from "./verification";
 
 const SESSION_PREFIX = "claude_";
@@ -229,6 +229,10 @@ export class ClaudeAgentAdapter implements SynthUpAdapter {
     const session = studioSessionFor(sessionId);
     if (!session.skillId) throw new Error("Session has no skill selected");
     const skill = getSkill(session.skillId);
+    // Decks and social posts are graphic design (legacy accents allowed);
+    // demos and components are UI (legacy accents are a violation).
+    const paletteContext: PaletteContext =
+      skill?.outputType === "deck" || skill?.outputType === "social" ? "graphic" : "ui";
     const startTime = Date.now();
 
     onEvent({ type: "phase_change", phase: "generating" });
@@ -257,7 +261,7 @@ export class ClaudeAgentAdapter implements SynthUpAdapter {
       `Write every output file into this directory (create it if needed): ${sessionDir}`,
       `Constraints:`,
       `- Self-contained outputs only (inline CSS/JS; Google Fonts links for DM Sans/DM Mono are fine).`,
-      `- Use ONLY these Loop palette colors (plus greyscale): ${paletteSummary()}.`,
+      `- Use ONLY these Loop palette colors (plus greyscale): ${paletteSummary(paletteContext)}.`,
       `- Do not invent tints or shades — pick the nearest step of the brand/neutral ramp instead.`,
       `- If the skill's preferred tooling is unavailable in this environment, produce the closest faithful equivalent (e.g. an HTML deck instead of .pptx) and record it in gaps.`,
       `- Do not modify any files outside ${sessionDir}.`,
@@ -315,7 +319,7 @@ export class ClaudeAgentAdapter implements SynthUpAdapter {
     }
 
     onEvent({ type: "step_start", step: "token-check" });
-    const tokenCheck = runTokenCheck(producedPaths);
+    const tokenCheck = runTokenCheck(producedPaths, paletteContext);
     results.push(tokenCheck.result);
     onEvent({
       type: "step_done",

@@ -3,7 +3,7 @@ import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type { VerificationResult } from "../types";
-import { loadBrandPalette, nearestToken } from "./brand-palette";
+import { isLegacyAccent, loadBrandPalette, nearestToken, type PaletteContext } from "./brand-palette";
 
 const execFileAsync = promisify(execFile);
 
@@ -42,9 +42,12 @@ function* extractColors(content: string): Generator<string> {
 
 const TEXT_EXTENSIONS = new Set([".html", ".css", ".svg", ".tsx", ".ts", ".jsx", ".js", ".json", ".md"]);
 
-export function runTokenCheck(files: string[]): { result: VerificationResult; gaps: string[] } {
+export function runTokenCheck(
+  files: string[],
+  context: PaletteContext
+): { result: VerificationResult; gaps: string[] } {
   const start = Date.now();
-  const palette = loadBrandPalette();
+  const palette = loadBrandPalette(context);
   const offenders = new Map<string, Set<string>>();
   let scanned = 0;
 
@@ -81,7 +84,11 @@ export function runTokenCheck(files: string[]): { result: VerificationResult; ga
   }
 
   const list = [...offenders.entries()].map(([hex, inFiles]) => {
-    const nearest = nearestToken(hex);
+    const legacy = isLegacyAccent(hex);
+    if (legacy) {
+      return `#${hex} (${[...inFiles].join(", ")}) — ${legacy} is a legacy accent: graphic design only, never UI components`;
+    }
+    const nearest = nearestToken(hex, context);
     const hint = nearest && nearest.distance <= 40 ? ` — closest token: ${nearest.name} #${nearest.hex}` : "";
     return `#${hex} (${[...inFiles].join(", ")})${hint}`;
   });
