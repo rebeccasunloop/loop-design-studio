@@ -29,11 +29,29 @@ export function StudioApp({ initialSkills }: { initialSkills: SkillDefinition[] 
   const [activeStep, setActiveStep] = useState<string | undefined>();
   const [gaps, setGaps] = useState<string[]>([]);
   const [approving, setApproving] = useState(false);
+  const [progress, setProgress] = useState<{ label: string; tokens: number } | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [artifactPanelOpen, setArtifactPanelOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadSessions();
   }, []);
+
+  // Elapsed-time ticker while the agent is working
+  const running = streaming || approving;
+  useEffect(() => {
+    if (!running) return;
+    setElapsed(0);
+    const startedAt = Date.now();
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+
+  // Artifact panel: closed by default, opens once this session has artifacts
+  useEffect(() => {
+    setArtifactPanelOpen((activeSession?.artifacts?.length ?? 0) > 0);
+  }, [activeSession?.id, (activeSession?.artifacts?.length ?? 0) > 0]);
 
   useEffect(() => {
     if (activeId) loadSession(activeId);
@@ -60,6 +78,13 @@ export function StudioApp({ initialSkills }: { initialSkills: SkillDefinition[] 
     const res = await apiFetch(`/api/sessions/${id}`);
     const data = await res.json();
     setActiveSession(data.session);
+    setMessages(
+      (data.session.messages ?? []).map((m: { id: string; role: "user" | "assistant"; content: string }) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+      }))
+    );
     setVerification(data.session.verification ?? []);
     setGaps(data.session.gaps?.map((g: { message: string }) => g.message) ?? []);
     if (data.session.spec && !data.session.specApproved) {
@@ -103,10 +128,14 @@ export function StudioApp({ initialSkills }: { initialSkills: SkillDefinition[] 
     setPendingSpec(null);
 
     let accumulated = "";
+    setProgress({ label: "Starting agent…", tokens: 0 });
     await consumeSSE(`/api/sessions/${activeId}/messages`, { content }, (event) => {
       if (event.type === "text_delta") {
         accumulated += event.content;
         setStreamText(accumulated);
+      }
+      if (event.type === "agent_progress") {
+        setProgress({ label: event.label, tokens: event.tokens ?? 0 });
       }
       if (event.type === "spec_ready") {
         setPendingSpec(event.spec);
@@ -116,12 +145,7 @@ export function StudioApp({ initialSkills }: { initialSkills: SkillDefinition[] 
       }
     });
 
-    if (accumulated) {
-      setMessages((prev) => [
-        ...prev,
-        { id: crypto.randomUUID(), role: "assistant", content: accumulated },
-      ]);
-    }
+    setProgress(null);
     setStreamText("");
     setStreaming(false);
     await loadSession(activeId);
@@ -134,6 +158,7 @@ export function StudioApp({ initialSkills }: { initialSkills: SkillDefinition[] 
     setVerification([]);
     setActiveStep("ground");
 
+    setProgress({ label: "Starting generation…", tokens: 0 });
     await consumeSSE(`/api/sessions/${activeId}/approve-spec`, {}, (event) => {
       if (event.type === "step_start") setActiveStep(event.step);
       if (event.type === "step_done") {
@@ -142,14 +167,19 @@ export function StudioApp({ initialSkills }: { initialSkills: SkillDefinition[] 
           { step: event.step, status: event.status, detail: event.detail },
         ]);
       }
+      if (event.type === "agent_progress") {
+        setProgress({ label: event.label, tokens: event.tokens ?? 0 });
+      }
       if (event.type === "gap_found") {
         setGaps((prev) => [...prev, event.message]);
       }
       if (event.type === "artifact_ready") {
+        setArtifactPanelOpen(true);
         loadSession(activeId);
       }
     });
 
+    setProgress(null);
     setPendingSpec(null);
     setApproving(false);
     setActiveStep(undefined);
@@ -179,6 +209,14 @@ export function StudioApp({ initialSkills }: { initialSkills: SkillDefinition[] 
           {activeSession && (
             <span className="text-xs px-2.5 py-1 rounded-full bg-[var(--bg-secondary)] text-[var(--text-secondary)] capitalize">
               {activeSession.phase.replace("_", " ")}
+            </span>
+          )}
+          {activeSession && (
+            <span
+              className="text-xs px-2.5 py-1 rounded-full border border-[var(--border-secondary)] text-[var(--text-secondary)]"
+              title="Model powering this session"
+            >
+              ✦ {modelDisplayName(activeSession.model)}
             </span>
           )}
           {verification.length > 0 && (
@@ -223,6 +261,10 @@ export function StudioApp({ initialSkills }: { initialSkills: SkillDefinition[] 
                     </div>
                   )}
 
+                  {running && progress && (
+                    <AgentActivity label={progress.label} tokens={progress.tokens} elapsed={elapsed} />
+                  )}
+
                   {pendingSpec && (
                     <SpecConfirmationCard
                       spec={pendingSpec}
@@ -264,17 +306,89 @@ export function StudioApp({ initialSkills }: { initialSkills: SkillDefinition[] 
             )}
           </div>
 
-          {/* Artifact panel */}
-          <div className="w-96 flex-shrink-0 bg-white flex flex-col">
-            <ArtifactPanel
-              artifacts={activeSession?.artifacts ?? []}
-              skillId={activeSession?.skillId ?? null}
-            />
+          {/* Artifact panel — closed by default, opens when an artifact lands */}
+          <div
+            className={`flex-shrink-0 bg-white flex flex-col transition-all duration-300 ${
+              artifactPanelOpen ? "w-96" : "w-11"
+            }`}
+          >
+            {artifactPanelOpen ? (
+              <>
+                <button
+                  onClick={() => setArtifactPanelOpen(false)}
+                  className="h-9 flex items-center justify-end px-3 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] border-b border-[var(--border-secondary)]"
+                  title="Collapse artifacts"
+                >
+                  Artifacts ⏵
+                </button>
+                <ArtifactPanel
+                  artifacts={activeSession?.artifacts ?? []}
+                  skillId={activeSession?.skillId ?? null}
+                />
+              </>
+            ) : (
+              <button
+                onClick={() => setArtifactPanelOpen(true)}
+                className="flex-1 flex flex-col items-center pt-4 gap-2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+                title="Expand artifacts"
+              >
+                <span className="text-xs">⏴</span>
+                <span className="text-xs" style={{ writingMode: "vertical-rl" }}>
+                  Artifacts{(activeSession?.artifacts?.length ?? 0) > 0 ? ` (${activeSession!.artifacts.length})` : ""}
+                </span>
+              </button>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+function AgentActivity({ label, tokens, elapsed }: { label: string; tokens: number; elapsed: number }) {
+  return (
+    <div className="mx-4 my-2 px-4 py-3 rounded-2xl border border-[var(--border-secondary)] bg-[var(--bg-secondary)] flex items-center gap-3">
+      <span className="flex gap-1 items-center" aria-hidden>
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="w-1.5 h-1.5 rounded-full bg-brand-500 animate-bounce"
+            style={{ animationDelay: `${i * 150}ms` }}
+          />
+        ))}
+      </span>
+      <span className="text-sm text-[var(--text-secondary)] flex-1 truncate">{label}</span>
+      <span className="text-xs text-[var(--text-tertiary)] tabular-nums flex-shrink-0">
+        {tokens > 0 && <span className="mr-3">≈{formatTokens(tokens)} tokens</span>}
+        {formatElapsed(elapsed)}
+      </span>
+    </div>
+  );
+}
+
+function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function formatTokens(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+}
+
+const MODEL_NAMES: Record<string, string> = {
+  "claude-opus-4-8": "Opus 4.8",
+  "claude-opus-4-7": "Opus 4.7",
+  "claude-opus-4-6": "Opus 4.6",
+  "claude-sonnet-5": "Sonnet 5",
+  "claude-sonnet-4-6": "Sonnet 4.6",
+  "claude-haiku-4-5": "Haiku 4.5",
+  "claude-fable-5": "Fable 5",
+};
+
+function modelDisplayName(model: string | null | undefined): string {
+  if (!model) return "Opus 4.8"; // adapter default
+  return MODEL_NAMES[model] ?? model;
 }
 
 async function consumeSSE(

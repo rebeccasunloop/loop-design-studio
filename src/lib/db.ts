@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import type {
   ArtifactRef,
+  ChatMessage,
   GapFinding,
   Session,
   SessionAnalytics,
@@ -86,6 +87,13 @@ export function saveSession(session: Session): Session {
   else db.sessions.push(session);
   writeDb(db);
   return session;
+}
+
+export function addMessage(sessionId: string, message: ChatMessage): void {
+  const session = getSession(sessionId);
+  if (!session) return;
+  session.messages = [...(session.messages ?? []), message];
+  saveSession(session);
 }
 
 export function addArtifact(sessionId: string, artifact: ArtifactRef): void {

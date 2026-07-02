@@ -93,6 +93,8 @@ export interface Session {
   phase: SessionPhase;
   synthupSessionId: string | null;
   claudeSessionId?: string | null;
+  model?: string | null;
+  messages?: ChatMessage[];
   spec: SpecOutline | null;
   specApproved: boolean;
   title: string;
@@ -115,6 +117,7 @@ export interface SessionAnalytics {
 
 export type StudioEvent =
   | { type: "text_delta"; content: string }
+  | { type: "agent_progress"; label: string; tokens?: number }
   | { type: "message_complete"; messageId: string }
   | { type: "spec_ready"; spec: SpecOutline }
   | { type: "step_start"; step: VerificationStep }

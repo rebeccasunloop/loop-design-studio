@@ -119,9 +119,40 @@ function loadSkillMarkdown(skillId: string): string {
   return fs.readFileSync(skillPath, "utf-8");
 }
 
+const DEFAULT_MODEL = "claude-opus-4-8";
+
+export function agentModel(): string {
+  return process.env.CLAUDE_AGENT_MODEL || DEFAULT_MODEL;
+}
+
 interface QueryRunResult {
   structuredOutput: unknown;
   claudeSessionId: string | null;
+}
+
+function shortPath(input: unknown): string {
+  return typeof input === "string" ? path.basename(input) : "";
+}
+
+/** Human-readable label for a tool call, for the live progress indicator. */
+function toolLabel(name: string, input: Record<string, unknown>): string {
+  switch (name) {
+    case "Write":
+      return `Writing ${shortPath(input.file_path)}`;
+    case "Edit":
+      return `Editing ${shortPath(input.file_path)}`;
+    case "Read":
+      return `Reading ${shortPath(input.file_path)}`;
+    case "Bash":
+      return typeof input.description === "string" ? input.description : "Running a command";
+    case "Glob":
+    case "Grep":
+      return "Searching the workspace";
+    case "StructuredOutput":
+      return "Preparing response…";
+    default:
+      return `Using ${name}`;
+  }
 }
 
 async function runQuery(params: {
@@ -132,15 +163,17 @@ async function runQuery(params: {
   outputFormat: Record<string, unknown>;
   maxTurns: number;
   additionalDirectories?: string[];
+  onProgress?: (label: string, tokens: number) => void;
 }): Promise<QueryRunResult> {
   let claudeSessionId: string | null = null;
   let structuredOutput: unknown = undefined;
+  let outputTokens = 0;
 
   const q = query({
     prompt: params.prompt,
     options: {
       cwd: process.cwd(),
-      model: process.env.CLAUDE_AGENT_MODEL || undefined,
+      model: agentModel(),
       systemPrompt: params.systemPrompt,
       resume: params.resume,
       allowedTools: params.allowedTools,
@@ -156,12 +189,40 @@ async function runQuery(params: {
     if ("session_id" in message && typeof message.session_id === "string") {
       claudeSessionId = message.session_id;
     }
+    if (message.type === "assistant" && params.onProgress) {
+      // usage on in-flight assistant messages under-reports (attached at
+      // message start), so estimate live tokens from emitted content and let
+      // the result message correct to the real total.
+      const blocks = message.message.content as unknown as Array<{
+        type: string;
+        text?: string;
+        thinking?: string;
+        name?: string;
+        input?: Record<string, unknown>;
+      }>;
+      for (const b of blocks) {
+        const chars =
+          (b.text?.length ?? 0) +
+          (b.thinking?.length ?? 0) +
+          (b.type === "tool_use" ? JSON.stringify(b.input ?? {}).length : 0);
+        outputTokens += Math.round(chars / 4);
+      }
+      const toolUse = blocks.find((b) => b.type === "tool_use");
+      if (toolUse?.name) {
+        params.onProgress(toolLabel(toolUse.name, toolUse.input ?? {}), outputTokens);
+      } else {
+        params.onProgress("Thinking…", outputTokens);
+      }
+    }
     if (message.type === "result") {
       if (message.subtype !== "success") {
         const detail = "result" in message ? (message as { result?: string }).result : undefined;
         throw new Error(`Agent run failed (${message.subtype})${detail ? `: ${detail}` : ""}`);
       }
       structuredOutput = message.structured_output;
+      if (params.onProgress) {
+        params.onProgress("Finishing up…", Math.max(outputTokens, message.usage?.output_tokens ?? 0));
+      }
     }
   }
 
@@ -194,6 +255,7 @@ export class ClaudeAgentAdapter implements SynthUpAdapter {
       skillMarkdown ? `\n--- SKILL INSTRUCTIONS ---\n${skillMarkdown}` : "",
     ].join("\n");
 
+    onEvent({ type: "agent_progress", label: "Starting agent…", tokens: 0 });
     const { structuredOutput, claudeSessionId } = await runQuery({
       prompt: content,
       systemPrompt,
@@ -201,12 +263,14 @@ export class ClaudeAgentAdapter implements SynthUpAdapter {
       allowedTools: ["Read", "Glob", "Grep"],
       outputFormat: CLARIFY_OUTPUT_SCHEMA,
       maxTurns: 15,
+      onProgress: (label, tokens) => onEvent({ type: "agent_progress", label, tokens }),
     });
 
-    if (claudeSessionId) {
+    {
       const current = getSession(session.id);
       if (current) {
-        current.claudeSessionId = claudeSessionId;
+        if (claudeSessionId) current.claudeSessionId = claudeSessionId;
+        current.model = agentModel();
         saveSession(current);
       }
     }
@@ -275,6 +339,7 @@ export class ClaudeAgentAdapter implements SynthUpAdapter {
     let generationError: string | null = null;
     let output: { summary?: string; files?: { filename: string; description: string }[]; gaps?: string[] } | undefined;
     try {
+      onEvent({ type: "agent_progress", label: "Starting generation…", tokens: 0 });
       const run = await runQuery({
         prompt,
         resume: session.claudeSessionId ?? undefined,
@@ -282,14 +347,14 @@ export class ClaudeAgentAdapter implements SynthUpAdapter {
         outputFormat: GENERATION_OUTPUT_SCHEMA,
         maxTurns: 60,
         additionalDirectories: additionalDirectories.length ? additionalDirectories : undefined,
+        onProgress: (label, tokens) => onEvent({ type: "agent_progress", label, tokens }),
       });
       output = run.structuredOutput as typeof output;
-      if (run.claudeSessionId) {
-        const current = getSession(session.id);
-        if (current) {
-          current.claudeSessionId = run.claudeSessionId;
-          saveSession(current);
-        }
+      const current = getSession(session.id);
+      if (current) {
+        if (run.claudeSessionId) current.claudeSessionId = run.claudeSessionId;
+        current.model = agentModel();
+        saveSession(current);
       }
     } catch (err) {
       generationError = err instanceof Error ? err.message : String(err);
@@ -361,6 +426,10 @@ export class ClaudeAgentAdapter implements SynthUpAdapter {
     for (const gap of gaps) {
       recordGap(session.id, session.skillId, session.userEmail, gap);
       onEvent({ type: "gap_found", message: gap });
+    }
+
+    if (output?.summary) {
+      onEvent({ type: "text_delta", content: output.summary });
     }
 
     updateVerification(session.id, results);

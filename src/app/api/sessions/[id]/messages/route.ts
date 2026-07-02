@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { v4 as uuidv4 } from "uuid";
-import { getSession, saveSession } from "@/lib/db";
+import { addMessage, getSession, saveSession } from "@/lib/db";
 import { getSkill } from "@/lib/skills";
 import { createSynthUpAdapter } from "@/lib/synthup/adapter";
 import type { StudioEvent } from "@/lib/types";
@@ -50,13 +50,24 @@ export async function POST(
     sess.title = content.slice(0, 60);
   }
   saveSession(sess);
+  addMessage(sess.id, {
+    id: uuidv4(),
+    sessionId: sess.id,
+    role: "user",
+    content,
+    createdAt: new Date().toISOString(),
+  });
 
   const synthupSessionId = sess.synthupSessionId;
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
     async start(controller) {
+      let assistantText = "";
       function send(event: StudioEvent) {
+        if (event.type === "text_delta") {
+          assistantText += event.content;
+        }
         if (event.type === "spec_ready") {
           const current = getSession(id);
           if (current) {
@@ -78,6 +89,15 @@ export async function POST(
       try {
         const adapter = await createSynthUpAdapter();
         await adapter.sendMessage(synthupSessionId!, content, send);
+        if (assistantText) {
+          addMessage(id, {
+            id: uuidv4(),
+            sessionId: id,
+            role: "assistant",
+            content: assistantText,
+            createdAt: new Date().toISOString(),
+          });
+        }
         send({ type: "message_complete", messageId: uuidv4() });
       } catch (err) {
         send({
