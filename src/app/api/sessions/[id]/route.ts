@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/db";
+import { reconcileStaleSession } from "@/lib/recovery";
 
 export async function GET(
   _req: NextRequest,
@@ -8,5 +9,5 @@ export async function GET(
   const { id } = await params;
   const session = getSession(id);
   if (!session) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ session });
+  return NextResponse.json({ session: reconcileStaleSession(session) });
 }

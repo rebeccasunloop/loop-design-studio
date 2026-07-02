@@ -50,11 +50,19 @@ export async function POST(
   const stream = new ReadableStream({
     async start(controller) {
       let assistantText = "";
+      let clientGone = false;
       function send(event: StudioEvent) {
         if (event.type === "text_delta") {
           assistantText += event.content;
         }
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        if (clientGone) return;
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        } catch {
+          // Client disconnected (refresh/navigation). Keep the generation
+          // running — all results are persisted to the session record.
+          clientGone = true;
+        }
       }
 
       try {
@@ -86,12 +94,20 @@ export async function POST(
         }
         send({ type: "phase_change", phase: "complete" });
       } catch (err) {
+        const failed = getSession(id);
+        if (failed) {
+          failed.phase = "error";
+          failed.specApproved = false;
+          saveSession(failed);
+        }
         send({
           type: "error",
           message: err instanceof Error ? err.message : "Generation failed",
         });
       } finally {
-        controller.close();
+        try {
+          controller.close();
+        } catch { /* already closed */ }
       }
     },
   });

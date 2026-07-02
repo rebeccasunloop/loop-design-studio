@@ -64,6 +64,7 @@ export async function POST(
   const stream = new ReadableStream({
     async start(controller) {
       let assistantText = "";
+      let clientGone = false;
       function send(event: StudioEvent) {
         if (event.type === "text_delta") {
           assistantText += event.content;
@@ -83,7 +84,13 @@ export async function POST(
             saveSession(current);
           }
         }
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        if (clientGone) return;
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        } catch {
+          // Client disconnected — keep the agent run going; results persist.
+          clientGone = true;
+        }
       }
 
       try {
@@ -100,12 +107,19 @@ export async function POST(
         }
         send({ type: "message_complete", messageId: uuidv4() });
       } catch (err) {
+        const failed = getSession(id);
+        if (failed && failed.phase === "clarify") {
+          failed.phase = failed.spec ? "spec_pending" : "intent";
+          saveSession(failed);
+        }
         send({
           type: "error",
           message: err instanceof Error ? err.message : "Unknown error",
         });
       } finally {
-        controller.close();
+        try {
+          controller.close();
+        } catch { /* already closed */ }
       }
     },
   });

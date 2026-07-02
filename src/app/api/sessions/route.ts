@@ -4,12 +4,13 @@ import { getSession, listSessions, saveSession, trackEvent } from "@/lib/db";
 import { getSkill } from "@/lib/skills";
 import { createSynthUpAdapter } from "@/lib/synthup/adapter";
 import { resolveUser } from "@/lib/identity";
+import { reconcileStaleSession } from "@/lib/recovery";
 import type { CreateSessionInput, Session } from "@/lib/types";
 
 export async function GET(req: NextRequest) {
   const user = resolveUser(req);
   if (!user) return NextResponse.json({ error: "Email domain not allowed" }, { status: 403 });
-  const sessions = listSessions(user.email);
+  const sessions = listSessions(user.email).map(reconcileStaleSession);
   return NextResponse.json({ sessions });
 }
 

@@ -265,6 +265,15 @@ export function StudioApp({ initialSkills }: { initialSkills: SkillDefinition[] 
                     <AgentActivity label={progress.label} tokens={progress.tokens} elapsed={elapsed} />
                   )}
 
+                  {!running && activeSession.phase === "error" && (
+                    <div className="mx-4 my-2 px-4 py-3 rounded-2xl border border-amber-200 bg-amber-50 text-sm text-amber-800">
+                      This run was interrupted before it finished.
+                      {pendingSpec
+                        ? " Review the spec below and approve it again to retry."
+                        : " Send your request again to retry."}
+                    </div>
+                  )}
+
                   {pendingSpec && (
                     <SpecConfirmationCard
                       spec={pendingSpec}
