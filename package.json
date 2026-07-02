@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "sync-skills": "tsx scripts/sync-skills.ts",
+    "tunnel": "cloudflared tunnel --url http://localhost:3000",
     "verify:deck": "node skills/loop-brand-deck/build/verify.js",
     "postinstall": "mkdir -p data storage/artifacts"
   },

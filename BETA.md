@@ -38,10 +38,18 @@ deployed infrastructure. (Real deployment is Phase 2 — see README.)
    `Cf-Access-Authenticated-User-Email` header, which the app maps to the
    session owner (see `src/lib/identity.ts`). No in-app auth code needed.
 
-3. **Quick smoke-test alternative (no SSO — do not share widely):**
-   `cloudflared tunnel --url http://localhost:3000` gives a throwaway
-   `trycloudflare.com` URL with zero auth. Fine for a 10-minute demo to one
-   person; not for the beta proper.
+3. **No-SSO mode (current, week of 2026-06-29):** `npm run tunnel` gives a
+   throwaway `trycloudflare.com` URL with zero auth — share it only with the
+   invited testers. The UI asks each tester for their Loop email once
+   (stored in localStorage, sent as `x-user-email`) so sessions and
+   analytics are still attributed per person. Caveats: the link is
+   unauthenticated (unguessable URL is the only protection), the URL
+   changes every time the tunnel restarts (re-post it in the Slack thread),
+   and identity is honor-system. Move to Access/SSO before widening the
+   group.
+
+   **Restart after a reboot:** `npm run dev` (terminal 1), `npm run tunnel`
+   (terminal 2) — the new URL is printed in a box in the tunnel output.
 
 ## Running the beta
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { apiFetch } from "@/lib/client-identity";
 import type { Session, SkillDefinition, SpecOutline, StudioEvent, VerificationResult } from "@/lib/types";
 import { ArtifactPanel } from "./ArtifactPanel";
 import { GapCallout } from "./GapCallout";
@@ -50,13 +51,13 @@ export function StudioApp({ initialSkills }: { initialSkills: SkillDefinition[] 
   }, [messages, streamText, pendingSpec]);
 
   async function loadSessions() {
-    const res = await fetch("/api/sessions");
+    const res = await apiFetch("/api/sessions");
     const data = await res.json();
     setSessions(data.sessions ?? []);
   }
 
   async function loadSession(id: string) {
-    const res = await fetch(`/api/sessions/${id}`);
+    const res = await apiFetch(`/api/sessions/${id}`);
     const data = await res.json();
     setActiveSession(data.session);
     setVerification(data.session.verification ?? []);
@@ -77,7 +78,7 @@ export function StudioApp({ initialSkills }: { initialSkills: SkillDefinition[] 
   }
 
   async function handleSelectSkill(skillId: string) {
-    const res = await fetch("/api/sessions", {
+    const res = await apiFetch("/api/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ skillId }),
@@ -281,7 +282,7 @@ async function consumeSSE(
   body: object,
   onEvent: (event: StudioEvent) => void
 ): Promise<void> {
-  const res = await fetch(url, {
+  const res = await apiFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
