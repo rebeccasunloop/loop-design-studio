@@ -1,0 +1,26 @@
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
+
+:root {
+  --brand-500: #045b3f;
+  --brand-600: #004932;
+  --brand-700: #003926;
+  --brand-100: #bbe5d0;
+  --bright-green: #d2f3a7;
+  --text-primary: #171717;
+  --text-secondary: #404040;
+  --text-tertiary: #525252;
+  --bg-primary: #ffffff;
+  --bg-secondary: #fafafa;
+  --border-secondary: #e5e5e5;
+  --success: #30ac2e;
+  --error: #f12d1b;
+  --warning: #dc6803;
+}
+
+body {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  font-family: "DM Sans", system-ui, sans-serif;
+}

@@ -1,0 +1,64 @@
+{
+  "skills": [
+    {
+      "id": "generate-loop-ui",
+      "name": "Frontend Components",
+      "description": "Generate real Loop UI components and screens using the design system. Produces type-checked Storybook stories.",
+      "outputType": "component",
+      "icon": "component",
+      "workspacePath": "next-app",
+      "requiredRole": "engineer",
+      "triggerExamples": [
+        "Build an eligibility check screen",
+        "Create a review step for onboarding",
+        "Design a settings page with form fields"
+      ],
+      "verificationSteps": ["type-check", "lint", "render-check"]
+    },
+    {
+      "id": "loop-brand-deck",
+      "name": "Slide Decks",
+      "description": "Generate on-brand customer presentation decks and one-pagers as editable PowerPoint files.",
+      "outputType": "deck",
+      "icon": "deck",
+      "workspacePath": "loop-brand-skill",
+      "requiredRole": "all",
+      "triggerExamples": [
+        "Make a deck for Acme Corp",
+        "Customer presentation for a new account",
+        "Pitch slides for FX savings"
+      ],
+      "verificationSteps": ["token-verify", "font-embed", "visual-qa"]
+    },
+    {
+      "id": "loop-social-post",
+      "name": "Social Media Posts",
+      "description": "Create on-brand social media images and captions for LinkedIn, Instagram, and X.",
+      "outputType": "social",
+      "icon": "social",
+      "workspacePath": "loop-brand-skill",
+      "requiredRole": "all",
+      "triggerExamples": [
+        "LinkedIn post announcing a new feature",
+        "Hiring post for engineering",
+        "Product launch graphic for Instagram"
+      ],
+      "verificationSteps": ["token-verify", "dimension-check", "visual-qa"]
+    },
+    {
+      "id": "loop-visual-demo",
+      "name": "Visual Demos",
+      "description": "Build clickable HTML prototypes for flow walkthroughs and rough ideas without production code.",
+      "outputType": "demo",
+      "icon": "demo",
+      "workspacePath": "loop-design-studio",
+      "requiredRole": "all",
+      "triggerExamples": [
+        "Prototype a new onboarding step",
+        "Demo a settings flow",
+        "Walkthrough of account setup"
+      ],
+      "verificationSteps": ["token-check", "screenshot"]
+    }
+  ]
+}
