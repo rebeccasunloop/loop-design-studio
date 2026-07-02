@@ -3,21 +3,19 @@ import { v4 as uuidv4 } from "uuid";
 import { getSession, listSessions, saveSession, trackEvent } from "@/lib/db";
 import { getSkill } from "@/lib/skills";
 import { createSynthUpAdapter } from "@/lib/synthup/adapter";
+import { resolveUser } from "@/lib/identity";
 import type { CreateSessionInput, Session } from "@/lib/types";
 
-function getDevUser(req: NextRequest) {
-  const email = req.headers.get("x-user-email") ?? "dev@bankonloop.com";
-  return { id: "dev-user", email, name: "Dev User", role: "engineer" as const };
-}
-
 export async function GET(req: NextRequest) {
-  const user = getDevUser(req);
+  const user = resolveUser(req);
+  if (!user) return NextResponse.json({ error: "Email domain not allowed" }, { status: 403 });
   const sessions = listSessions(user.email);
   return NextResponse.json({ sessions });
 }
 
 export async function POST(req: NextRequest) {
-  const user = getDevUser(req);
+  const user = resolveUser(req);
+  if (!user) return NextResponse.json({ error: "Email domain not allowed" }, { status: 403 });
   const body = (await req.json()) as CreateSessionInput;
 
   if (body.skillId && !getSkill(body.skillId)) {
