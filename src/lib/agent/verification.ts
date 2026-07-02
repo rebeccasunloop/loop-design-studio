@@ -3,24 +3,19 @@ import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type { VerificationResult } from "../types";
+import { loadBrandPalette, nearestToken } from "./brand-palette";
 
 const execFileAsync = promisify(execFile);
 
-// Loop brand palette (from skills/loop-brand-deck/build/brand.js + hero recipe).
-// Greyscale values (r==g==b) are always allowed.
-const BRAND_HEX = new Set(
-  [
-    "045B3F", "004932", "003926", "011710", "035239", "026648",
-    "D2F3A7", "E8F9CC", "F0FAE0",
-    "171717", "404040", "737373", "A3A3A3", "D4D4D4", "E5E5E5",
-    "F5F5F5", "FAFAFA", "FFFFFF", "000000",
-  ].map((h) => h.toUpperCase())
-);
-
+// Allowed colors come from the Loop palette (brand.js + design-system doc).
+// Greyscale values (r==g==b) are additionally allowed — shadows, overlays.
 function normalizeHex(raw: string): string {
-  const h = raw.replace("#", "").toUpperCase();
-  if (h.length === 3) return h.split("").map((c) => c + c).join("");
-  return h.slice(0, 6);
+  let h = raw.replace("#", "").toUpperCase();
+  if (h.length === 3 || h.length === 4) {
+    // #RGB / #RGBA → expand channels, drop alpha
+    h = h.slice(0, 3).split("").map((c) => c + c).join("");
+  }
+  return h.slice(0, 6); // #RRGGBBAA → drop alpha
 }
 
 function isGreyscale(hex: string): boolean {
@@ -28,10 +23,28 @@ function isGreyscale(hex: string): boolean {
   return r === g && g === b;
 }
 
+function rgbToHex(r: number, g: number, b: number): string {
+  return [r, g, b]
+    .map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
+}
+
+function* extractColors(content: string): Generator<string> {
+  for (const match of content.matchAll(/#([0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b/g)) {
+    yield normalizeHex(match[0]);
+  }
+  // rgb()/rgba() — alpha is ignored; the underlying color must be a token.
+  for (const match of content.matchAll(/rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/g)) {
+    yield rgbToHex(Number(match[1]), Number(match[2]), Number(match[3]));
+  }
+}
+
 const TEXT_EXTENSIONS = new Set([".html", ".css", ".svg", ".tsx", ".ts", ".jsx", ".js", ".json", ".md"]);
 
 export function runTokenCheck(files: string[]): { result: VerificationResult; gaps: string[] } {
   const start = Date.now();
+  const palette = loadBrandPalette();
   const offenders = new Map<string, Set<string>>();
   let scanned = 0;
 
@@ -40,9 +53,8 @@ export function runTokenCheck(files: string[]): { result: VerificationResult; ga
     if (!fs.existsSync(file)) continue;
     scanned++;
     const content = fs.readFileSync(file, "utf-8");
-    for (const match of content.matchAll(/#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g)) {
-      const hex = normalizeHex(match[0]);
-      if (!BRAND_HEX.has(hex) && !isGreyscale(hex)) {
+    for (const hex of extractColors(content)) {
+      if (!palette.has(hex) && !isGreyscale(hex)) {
         if (!offenders.has(hex)) offenders.set(hex, new Set());
         offenders.get(hex)!.add(path.basename(file));
       }
@@ -68,7 +80,11 @@ export function runTokenCheck(files: string[]): { result: VerificationResult; ga
     };
   }
 
-  const list = [...offenders.entries()].map(([hex, fs2]) => `#${hex} (${[...fs2].join(", ")})`);
+  const list = [...offenders.entries()].map(([hex, inFiles]) => {
+    const nearest = nearestToken(hex);
+    const hint = nearest && nearest.distance <= 40 ? ` — closest token: ${nearest.name} #${nearest.hex}` : "";
+    return `#${hex} (${[...inFiles].join(", ")})${hint}`;
+  });
   return {
     result: {
       step: "token-check",

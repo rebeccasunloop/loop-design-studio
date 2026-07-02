@@ -18,6 +18,7 @@ import {
 } from "../db";
 import { getSkill } from "../skills";
 import { recordGap } from "../pipeline";
+import { paletteSummary } from "./brand-palette";
 import { runScreenshot, runTokenCheck } from "./verification";
 
 const SESSION_PREFIX = "claude_";
@@ -256,7 +257,8 @@ export class ClaudeAgentAdapter implements SynthUpAdapter {
       `Write every output file into this directory (create it if needed): ${sessionDir}`,
       `Constraints:`,
       `- Self-contained outputs only (inline CSS/JS; Google Fonts links for DM Sans/DM Mono are fine).`,
-      `- Use only Loop brand colors (see skills/loop-brand-deck/build/brand.js) and greyscale.`,
+      `- Use ONLY these Loop palette colors (plus greyscale): ${paletteSummary()}.`,
+      `- Do not invent tints or shades — pick the nearest step of the brand/neutral ramp instead.`,
       `- If the skill's preferred tooling is unavailable in this environment, produce the closest faithful equivalent (e.g. an HTML deck instead of .pptx) and record it in gaps.`,
       `- Do not modify any files outside ${sessionDir}.`,
     ].join("\n");
