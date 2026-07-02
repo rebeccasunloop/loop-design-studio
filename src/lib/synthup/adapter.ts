@@ -21,15 +21,34 @@ export interface SynthUpAdapter {
   ): Promise<void>;
 }
 
-export async function createSynthUpAdapter(): Promise<SynthUpAdapter> {
-  const useMock =
-    process.env.SYNTHUP_MOCK === "true" || !process.env.SYNTHUP_API_URL;
-  if (useMock) {
-    const { MockSynthUpAdapter } = await import("./mock");
-    return new MockSynthUpAdapter();
+export type AgentBackend = "claude" | "synthup" | "mock";
+
+export function getAgentBackend(): AgentBackend {
+  const configured = process.env.AGENT_BACKEND;
+  if (configured === "claude" || configured === "synthup" || configured === "mock") {
+    return configured;
   }
-  const { HttpSynthUpAdapter } = await import("./http");
-  return new HttpSynthUpAdapter();
+  if (process.env.SYNTHUP_MOCK !== "true" && process.env.SYNTHUP_API_URL) {
+    return "synthup";
+  }
+  return "mock";
+}
+
+export async function createSynthUpAdapter(): Promise<SynthUpAdapter> {
+  switch (getAgentBackend()) {
+    case "claude": {
+      const { ClaudeAgentAdapter } = await import("../agent/claude");
+      return new ClaudeAgentAdapter();
+    }
+    case "synthup": {
+      const { HttpSynthUpAdapter } = await import("./http");
+      return new HttpSynthUpAdapter();
+    }
+    default: {
+      const { MockSynthUpAdapter } = await import("./mock");
+      return new MockSynthUpAdapter();
+    }
+  }
 }
 
 export function sleep(ms: number): Promise<void> {

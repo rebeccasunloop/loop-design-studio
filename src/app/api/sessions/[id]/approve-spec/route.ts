@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { getSession, saveSession, trackEvent } from "@/lib/db";
 import { runPostProcessing } from "@/lib/pipeline";
-import { createSynthUpAdapter } from "@/lib/synthup/adapter";
+import { createSynthUpAdapter, getAgentBackend } from "@/lib/synthup/adapter";
 import type { StudioEvent } from "@/lib/types";
 
 export async function POST(
@@ -59,7 +59,11 @@ export async function POST(
           await adapter.approveSpec(session.synthupSessionId, spec, send);
         }
 
-        await runPostProcessing(session, spec, send);
+        // The Claude adapter generates real artifacts and runs verification
+        // itself; the simulated post-processing is for the mock/SynthUp paths.
+        if (getAgentBackend() !== "claude") {
+          await runPostProcessing(session, spec, send);
+        }
 
         const updated = getSession(id);
         if (updated) {

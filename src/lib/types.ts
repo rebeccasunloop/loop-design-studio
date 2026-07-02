@@ -92,6 +92,7 @@ export interface Session {
   skillId: string | null;
   phase: SessionPhase;
   synthupSessionId: string | null;
+  claudeSessionId?: string | null;
   spec: SpecOutline | null;
   specApproved: boolean;
   title: string;
